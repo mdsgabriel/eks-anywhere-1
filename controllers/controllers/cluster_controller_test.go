@@ -21,6 +21,7 @@ import (
 
 	_ "github.com/aws/eks-anywhere/internal/test/envtest"
 	anywherev1 "github.com/aws/eks-anywhere/pkg/api/v1alpha1"
+	"github.com/aws/eks-anywhere/pkg/constants"
 	"github.com/aws/eks-anywhere/pkg/networkutils"
 	"github.com/aws/eks-anywhere/pkg/providers/vsphere"
 	"github.com/aws/eks-anywhere/pkg/providers/vsphere/mocks"
@@ -165,7 +166,11 @@ func TestClusterReconcilerFailToSetUpMachineConfigCP(t *testing.T) {
 	machineConfigCP := createCPMachineConfig()
 	machineConfigWN := createWNMachineConfig()
 
-	objs := []runtime.Object{cluster, datacenterConfig, secret, bundle, eksd, machineConfigCP, machineConfigWN, managementCluster}
+	capiCluster := &clusterv1.Cluster{}
+	capiCluster.Namespace = constants.EksaSystemNamespace
+	capiCluster.Name = cluster.Name
+
+	objs := []runtime.Object{cluster, datacenterConfig, secret, bundle, eksd, machineConfigCP, machineConfigWN, managementCluster, capiCluster}
 
 	cb := fake.NewClientBuilder()
 	cl := cb.WithRuntimeObjects(objs...).Build()

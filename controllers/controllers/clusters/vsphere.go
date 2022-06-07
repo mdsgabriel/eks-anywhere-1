@@ -19,8 +19,6 @@ import (
 	anywherev1 "github.com/aws/eks-anywhere/pkg/api/v1alpha1"
 	c "github.com/aws/eks-anywhere/pkg/cluster"
 	"github.com/aws/eks-anywhere/pkg/constants"
-	"github.com/aws/eks-anywhere/pkg/executables"
-	"github.com/aws/eks-anywhere/pkg/networking/cilium"
 	"github.com/aws/eks-anywhere/pkg/providers"
 	"github.com/aws/eks-anywhere/pkg/providers/common"
 	"github.com/aws/eks-anywhere/pkg/providers/vsphere"
@@ -31,12 +29,9 @@ const defaultRequeueTime = time.Minute
 
 // TODO move these constants
 const (
-	managedEtcdReadyCondition             clusterv1.ConditionType = "ManagedEtcdReady"
-	controlSpecPlaneAppliedCondition      clusterv1.ConditionType = "ControlPlaneSpecApplied"
-	workerNodeSpecPlaneAppliedCondition   clusterv1.ConditionType = "WorkerNodeSpecApplied"
-	extraObjectsSpecPlaneAppliedCondition clusterv1.ConditionType = "ExtraObjectsSpecApplied"
-	cniSpecAppliedCondition               clusterv1.ConditionType = "CNISpecApplied"
-	controlPlaneReadyCondition            clusterv1.ConditionType = "ControlPlaneReady"
+	managedEtcdReadyCondition           clusterv1.ConditionType = "ManagedEtcdReady"
+	controlSpecPlaneAppliedCondition    clusterv1.ConditionType = "ControlPlaneSpecApplied"
+	workerNodeSpecPlaneAppliedCondition clusterv1.ConditionType = "WorkerNodeSpecApplied"
 )
 
 // Struct that holds common methods and properties
@@ -166,7 +161,7 @@ func (v *VSphereClusterReconciler) Reconcile(ctx context.Context, cluster *anywh
 		return reconciler.Result{}, err
 	}
 
-	specWithBundles, err := c.BuildSpecFromBundles(cluster, bundles, c.WithEksdRelease(eksd))
+	specWithBundles, _ := c.BuildSpecFromBundles(cluster, bundles, c.WithEksdRelease(eksd))
 
 	vsphereClusterSpec := vsphere.NewSpec(specWithBundles, machineConfigMap, dataCenterConfig)
 
@@ -235,67 +230,6 @@ func (v *VSphereClusterReconciler) Reconcile(ctx context.Context, cluster *anywh
 		}
 	}
 
-	if !conditions.IsTrue(capiCluster, controlPlaneReadyCondition) {
-		v.Log.Info("waiting for control plane to be ready", "cluster", capiCluster.Name, "kind", capiCluster.Kind)
-		return reconciler.Result{Result: &ctrl.Result{
-			RequeueAfter: defaultRequeueTime,
-		}}, err
-	}
-
-	if result, err := v.reconcileExtraObjects(ctx, cluster, capiCluster, specWithBundles); err != nil {
-		return result, err
-	}
-
-	if result, err := v.reconcileCNI(ctx, cluster, capiCluster, specWithBundles); err != nil {
-		return result, err
-	}
-
-	return reconciler.Result{}, nil
-}
-
-func (v *VSphereClusterReconciler) reconcileCNI(ctx context.Context, cluster *anywherev1.Cluster, capiCluster *clusterv1.Cluster, specWithBundles *c.Spec) (reconciler.Result, error) {
-	if !conditions.Has(cluster, cniSpecAppliedCondition) || conditions.IsFalse(capiCluster, cniSpecAppliedCondition) {
-		v.Log.Info("Getting remote client", "client for cluster", capiCluster.Name)
-		key := client.ObjectKey{
-			Namespace: capiCluster.Namespace,
-			Name:      capiCluster.Name,
-		}
-		remoteClient, err := v.tracker.GetClient(ctx, key)
-		if err != nil {
-			return reconciler.Result{}, err
-		}
-
-		v.Log.Info("About to apply CNI")
-
-		helm := executables.NewHelm(executables.NewExecutable("helm"))
-		cilium := cilium.NewCilium(nil, helm)
-
-		if err != nil {
-			return reconciler.Result{}, err
-		}
-		ciliumSpec, err := cilium.GenerateManifest(ctx, specWithBundles, []string{constants.CapvSystemNamespace})
-		if err != nil {
-			return reconciler.Result{}, err
-		}
-		if err := reconciler.ReconcileYaml(ctx, remoteClient, ciliumSpec); err != nil {
-			return reconciler.Result{}, err
-		}
-		conditions.MarkTrue(cluster, cniSpecAppliedCondition)
-	}
-	return reconciler.Result{}, nil
-}
-
-func (v *VSphereClusterReconciler) reconcileExtraObjects(ctx context.Context, cluster *anywherev1.Cluster, capiCluster *clusterv1.Cluster, specWithBundles *c.Spec) (reconciler.Result, error) {
-	if !conditions.IsTrue(capiCluster, extraObjectsSpecPlaneAppliedCondition) {
-		extraObjects := c.BuildExtraObjects(specWithBundles)
-
-		for _, spec := range extraObjects.Values() {
-			if err := reconciler.ReconcileYaml(ctx, v.Client, spec); err != nil {
-				return reconciler.Result{}, err
-			}
-		}
-		conditions.MarkTrue(cluster, extraObjectsSpecPlaneAppliedCondition)
-	}
 	return reconciler.Result{}, nil
 }
 
