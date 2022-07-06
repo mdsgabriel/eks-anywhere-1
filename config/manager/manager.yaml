@@ -16,6 +16,8 @@ spec:
       labels:
         control-plane: eksa-controller-manager
     spec:
+      imagePullSecrets:
+      - name: regcred
       containers:
       - args:
         - --leader-elect
@@ -34,6 +36,11 @@ spec:
           httpGet:
             path: /healthz
             port: healthz
+        env:
+          - name: FULL_LIFECYCLE_API
+            value: "true"
+          - name: MR_TOOLS_DISABLE
+            value: "true"
       terminationGracePeriodSeconds: 10
       tolerations:
         - effect: NoSchedule
